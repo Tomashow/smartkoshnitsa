@@ -75,7 +75,7 @@ def parse_pdf(pdf_path: str, store_name: str,
                 page_h = page.rect.height
 
                 name_blocks = []   # list of dicts
-                price_blocks = []  # list of dicts
+                raw_price_blocks = []  # all blocks with a ЛВ. price
 
                 for block in blocks:
                     text = block[4].strip()
@@ -83,7 +83,7 @@ def parse_pdf(pdf_path: str, store_name: str,
                         continue
                     x, y = block[0], block[1]
 
-                    # --- Price block: contains BGN price (ЛВ.) ---
+                    # --- Raw price block: contains any BGN price (ЛВ.) ---
                     bgn_matches = re.findall(r'(\d+)[,.](\d{2})ЛВ\.', text)
                     if bgn_matches:
                         bgn_prices = [
@@ -91,15 +91,9 @@ def parse_pdf(pdf_path: str, store_name: str,
                         ]
                         bgn_prices = [p for p in bgn_prices if 0.01 < p < 500]
                         if bgn_prices:
-                            price = min(bgn_prices)
-                            original = (
-                                max(bgn_prices)
-                                if len(bgn_prices) > 1 and max(bgn_prices) > price
-                                else None
-                            )
-                            price_blocks.append({
+                            raw_price_blocks.append({
                                 'x': x, 'y': y,
-                                'price': price, 'original': original,
+                                'price': min(bgn_prices),
                             })
                         continue
 
@@ -109,52 +103,86 @@ def parse_pdf(pdf_path: str, store_name: str,
                         continue
                     if '%' in text:
                         continue
-                    # Split into lines; product names are 1-3 lines
                     lines = [l.strip() for l in text.split('\n') if l.strip()]
                     if not lines or len(lines) > 5:
                         continue
                     first = lines[0]
-                    # Skip ALL-CAPS single words (section banners)
                     if first.isupper() and len(first.split()) <= 2:
                         continue
-                    # Skip short noise
                     if len(first) < 3:
                         continue
-                    # Skip leading digit (price/code fragments)
                     if re.match(r'^\d', first):
                         continue
-                    # Skip footer-style long sentences (> 60 chars with spaces)
                     if len(first) > 60 and first.count(' ') > 8:
                         continue
-                    name_blocks.append({
-                        'x': x, 'y': y, 'name': first,
-                    })
+                    name_blocks.append({'x': x, 'y': y, 'name': first})
 
-                # Pair each price block with the nearest name block
-                used_name_indices = set()
-                for pb in price_blocks:
+                # --- Phase 1: pair raw price blocks into (current, original) pairs ---
+                # In Kaufland PDFs the original (struck-through) price block sits
+                # 7-10 px ABOVE (smaller y) and within 20 px horizontally of the
+                # current price block.  Group them tightly, then use:
+                #   lower y  = original price
+                #   higher y = current price (closer to the product name)
+                used_raw = set()
+                price_pairs = []  # {x, y, price, original_price}
+                for i, pb in enumerate(raw_price_blocks):
+                    if i in used_raw:
+                        continue
+                    best_j = None
+                    best_dy = float('inf')
+                    for j, ob in enumerate(raw_price_blocks):
+                        if j == i or j in used_raw:
+                            continue
+                        dx = abs(ob['x'] - pb['x'])
+                        dy = ob['y'] - pb['y']   # negative = ob is above pb
+                        # Original is a few px above and almost same x
+                        if dx <= 20 and -15 <= dy <= -4:
+                            if abs(dy) < best_dy:
+                                best_dy = abs(dy)
+                                best_j = j
+                    if best_j is not None:
+                        ob = raw_price_blocks[best_j]
+                        used_raw.update([i, best_j])
+                        # pb is below ob → pb = current, ob = original
+                        price_pairs.append({
+                            'x': pb['x'], 'y': pb['y'],
+                            'price': pb['price'],
+                            'original_price': ob['price'],
+                        })
+                    else:
+                        used_raw.add(i)
+                        price_pairs.append({
+                            'x': pb['x'], 'y': pb['y'],
+                            'price': pb['price'],
+                            'original_price': None,
+                        })
+
+                # --- Phase 2: match each name block to its nearest price pair ---
+                used_pair_indices = set()
+                for nb in name_blocks:
                     best_idx = None
                     best_score = float('inf')
-                    for i, nb in enumerate(name_blocks):
-                        if i in used_name_indices:
+                    for i, pp in enumerate(price_pairs):
+                        if i in used_pair_indices:
                             continue
-                        dx = abs(nb['x'] - pb['x'])
-                        dy = abs(nb['y'] - pb['y'])
+                        dx = abs(pp['x'] - nb['x'])
+                        dy = abs(pp['y'] - nb['y'])
                         if dx > 350 or dy > 250:
                             continue
                         score = dx * 0.4 + dy
                         if score < best_score:
                             best_score = score
                             best_idx = i
-                    if best_idx is not None:
-                        nb = name_blocks[best_idx]
-                        used_name_indices.add(best_idx)
-                        _products.append({
-                            'name': nb['name'],
-                            'price': pb['price'],
-                            'original_price': pb.get('original'),
-                            'page_number': page_num,
-                        })
+                    if best_idx is None:
+                        continue
+                    pp = price_pairs[best_idx]
+                    used_pair_indices.add(best_idx)
+                    _products.append({
+                        'name': nb['name'],
+                        'price': pp['price'],
+                        'original_price': pp['original_price'],
+                        'page_number': page_num,
+                    })
 
             print(f'Strategy 2 (spatial): {len(_products)} products', flush=True)
             products = _products
