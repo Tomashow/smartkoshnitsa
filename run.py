@@ -24,12 +24,19 @@ def cmd_init():
 def cmd_scrape():
     """Run all scrapers and insert products into the database."""
     from scrapers.billa import BillaScraper
+    from scrapers.kaufland import KauflandScraper
 
-    scraper = BillaScraper()
-    products = scraper.scrape()
-    if products:
-        count = upsert_products(products)
-        print(f"Inserted {count} products.")
+    for name, scraper in [("Billa", BillaScraper()), ("Kaufland", KauflandScraper())]:
+        try:
+            products = scraper.scrape()
+            if products:
+                count = upsert_products(products)
+                print(f"{name}: inserted {count} products.")
+            else:
+                print(f"{name}: no products returned.")
+        except Exception as e:
+            print(f"{name}: scraper error — {e}", file=sys.stderr)
+
     total = count_active_products()
     print(f"Total active products in DB: {total}")
 
