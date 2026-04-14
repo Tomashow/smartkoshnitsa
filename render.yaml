@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: smartkoshnitsa
+    runtime: python
+    buildCommand: pip install -e .
+    startCommand: python3 run.py serve
+    envVars:
+      - key: DB_PATH
+        value: data/smartkoshnitsa.db
+      - key: PYTHON_VERSION
+        value: 3.11.0

@@ -34,6 +34,14 @@ def cmd_scrape():
     print(f"Total active products in DB: {total}")
 
 
+def cmd_serve():
+    """Start the FastAPI server (port from $PORT env var, default 8000)."""
+    import os
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("api.main:app", host="0.0.0.0", port=port, reload=False)
+
+
 def cmd_search(query: str):
     """Fuzzy search products by name."""
     results = search_products(query)
@@ -42,7 +50,7 @@ def cmd_search(query: str):
         return
     for r in results:
         orig = f" (було {r['original_price']:.2f})" if r["original_price"] else ""
-        print(f"[{r['store_name']}] {r['name']} \u2014 {r['price']:.2f} лв.{orig} ({r['score']:.0f}%)")
+        print(f"[{r['store_name']}] {r['name']} — {r['price']:.2f} лв.{orig} ({r['score']:.0f}%)")
 
 
 def main():
@@ -51,6 +59,7 @@ def main():
         print("Commands:")
         print("  init          - Create database and seed stores")
         print("  scrape        - Run all scrapers")
+        print("  serve         - Start web UI on http://localhost:8000")
         print("  search <term> - Search products")
         sys.exit(1)
 
@@ -60,6 +69,8 @@ def main():
         cmd_init()
     elif command == "scrape":
         cmd_scrape()
+    elif command == "serve":
+        cmd_serve()
     elif command == "search":
         if len(sys.argv) < 3:
             print("Usage: python run.py search <query>")

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartKoshnitsa</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      color: #222;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #d32f2f;
+      color: #fff;
+      padding: 20px 24px;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: 0.5px; }
+    header p  { font-size: 0.85rem; opacity: 0.85; margin-top: 2px; }
+
+    .search-bar {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 16px 24px;
+      display: flex;
+      gap: 10px;
+    }
+    .search-bar input {
+      flex: 1;
+      padding: 10px 14px;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .search-bar input:focus { border-color: #d32f2f; }
+    .search-bar button {
+      padding: 10px 20px;
+      background: #d32f2f;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .search-bar button:hover { background: #b71c1c; }
+
+    #status {
+      padding: 10px 24px;
+      font-size: 0.85rem;
+      color: #888;
+      min-height: 36px;
+    }
+
+    #results {
+      padding: 0 24px 32px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .card-store {
+      display: inline-block;
+      background: #d32f2f;
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      align-self: flex-start;
+    }
+
+    .card-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+
+    .card-price-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .card-price {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #d32f2f;
+    }
+    .card-original {
+      font-size: 0.85rem;
+      color: #999;
+      text-decoration: line-through;
+    }
+    .card-unit {
+      font-size: 0.8rem;
+      color: #666;
+    }
+    .card-discount {
+      font-size: 0.78rem;
+      background: #e8f5e9;
+      color: #2e7d32;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+
+    .empty {
+      grid-column: 1/-1;
+      text-align: center;
+      color: #aaa;
+      padding: 48px 0;
+      font-size: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🛒 SmartKoshnitsa</h1>
+  <p>Търсене на промоции в Bulgarian supermarkets</p>
+</header>
+
+<div class="search-bar">
+  <input id="q" type="text" placeholder="Търси продукт... (напр. мляко, хляб, сирене)" autofocus>
+  <button id="btn">Търси</button>
+</div>
+
+<div id="status"></div>
+<div id="results"></div>
+
+<script>
+  const input   = document.getElementById('q');
+  const btn     = document.getElementById('btn');
+  const status  = document.getElementById('status');
+  const results = document.getElementById('results');
+
+  let debounceTimer;
+
+  function fmt(n) {
+    return Number(n).toFixed(2);
+  }
+
+  function discount(orig, curr) {
+    if (!orig || orig <= curr) return '';
+    const pct = Math.round((1 - curr / orig) * 100);
+    return pct > 0 ? `-${pct}%` : '';
+  }
+
+  function render(items) {
+    if (!items.length) {
+      results.innerHTML = '<div class="empty">Няма намерени продукти</div>';
+      return;
+    }
+    results.innerHTML = items.map(p => {
+      const disc = discount(p.original_price, p.price);
+      const unit = p.unit ? `<span class="card-unit">/ ${p.unit}</span>` : '';
+      const orig = p.original_price
+        ? `<span class="card-original">${fmt(p.original_price)} лв.</span>`
+        : '';
+      const badge = disc ? `<span class="card-discount">${disc}</span>` : '';
+      return `
+        <div class="card">
+          <span class="card-store">${p.store_name}</span>
+          <div class="card-name">${p.name}</div>
+          <div class="card-price-row">
+            <span class="card-price">${fmt(p.price)} лв.</span>
+            ${unit}${orig}${badge}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  async function doSearch() {
+    const q = input.value.trim();
+    if (!q) {
+      status.textContent = '';
+      results.innerHTML = '';
+      return;
+    }
+    status.textContent = 'Търсене...';
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      status.textContent = data.length
+        ? `${data.length} резултата за „${q}"`
+        : `Няма резултати за „${q}"`;
+      render(data);
+    } catch (e) {
+      status.textContent = 'Грешка при търсенето';
+      results.innerHTML = '';
+    }
+  }
+
+  btn.addEventListener('click', doSearch);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+  input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(doSearch, 300);
+  });
+</script>
+
+</body>
+</html>
