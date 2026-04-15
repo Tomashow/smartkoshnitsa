@@ -37,22 +37,35 @@ Kaufland, Lidl, Billa Bulgaria. FastAPI backend + vanilla JS frontend. SQLite.
 
 <!-- UPDATE THIS EVERY SESSION — one line only -->
 
-Fixing Billa scraper: currently returns 17 products (homepage teasers).
-Must target /promotions page and return 100+ products.
+Build Lidl scraper (100+ products). Kaufland + Billa + PDF parser + UI all done.
 
 ## Project state
 
 - [x] DB models + init_db() working
 - [x] Stores seeded: Кауфланд / Лидл / Билла
 - [x] normalizer.py + 10 tests passing
-- [x] scrapers/billa.py v1 — 17 products (NEEDS FIX → 100+)
-- [ ] scrapers/billa.py v2 — /promotions page ← CURRENT
-- [ ] scrapers/lidl.py
-- [ ] scrapers/kaufland.py
-- [ ] parser/pdf_parser.py
-- [ ] api/main.py
-- [ ] frontend/index.html
-- [ ] GitHub Actions + Railway deploy
+- [x] scrapers/billa.py v2 — 311 products from ssbbilla.site
+- [x] scrapers/kaufland.py — PDF brochure scraper, 192 products
+- [x] parser/pdf_parser.py — 3-strategy hybrid (tables / spatial+OCR / words)
+  - Full product names (up to 3 lines joined)
+  - Current vs original price pairing (spatial dy proximity)
+  - Image extraction: crop from full-page JPEG at 2× scale → 78/192 with images
+- [x] api/main.py — FastAPI + /api/search + /images/ static + frontend static
+- [x] frontend/index.html — search UI, EUR primary / BGN secondary, per-store badge colors, product images, validity dates
+- [ ] scrapers/lidl.py ← NEXT
+- [ ] GitHub Actions weekly cron
+- [ ] Basket comparison UI (/api/basket)
+
+## PDF parser notes
+
+- Strategy 1: pdfplumber tables (fast, quality-checked)
+- Strategy 2: pymupdf spatial blocks + pymupdf4llm OCR fallback for image-only pages
+  - Phase 1: pair current/original price blocks by x-proximity (dx≤20, dy -15…-4)
+  - Phase 2: match name blocks to price pairs by weighted distance
+  - Image crop: largest image per page (coverage >50%) is full-page JPEG at 2×;
+    crop above each name block: cx±90pt, cy-220pt..cy-10pt → save as 300×300 JPEG
+- Strategy 3: pdfplumber word coordinates (last resort)
+- PaddleOCR/PP-StructureV3 ABANDONED — OneDNN bug on Windows (all Python versions)
 
 ## Definition of done — each scraper
 
@@ -147,9 +160,8 @@ asyncio.run(inspect())
 - /scraper <url> → inspect page, find selectors
 - /test <file> → run tests, fix failures
 
-## Next 4 milestones in order
+## Next 3 milestones in order
 
-1. Billa scraper → 100+ products
-2. Lidl scraper → 100+ products
-3. Kaufland scraper + PDF parser
-4. API + frontend
+1. Lidl scraper → 100+ products
+2. GitHub Actions weekly cron (scrape on schedule, push to Render/Railway)
+3. Basket comparison UI — /api/basket endpoint + frontend
