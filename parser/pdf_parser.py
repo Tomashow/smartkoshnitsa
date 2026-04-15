@@ -1,6 +1,7 @@
 """
 PDF parser for supermarket brochures.
 Tries three strategies in order, uses first that returns > 5 products.
+Strategy 2 (spatial) adds a pymupdf4llm fallback for image-only pages.
 """
 
 import re
@@ -12,6 +13,77 @@ def _quality_ok(products: list) -> bool:
         return False
     bad = sum(1 for p in products if re.match(r'^\d', p['name']))
     return bad / len(products) < 0.4
+
+
+def _ocr_page_fallback(pdf_path: str, page_idx: int, page_num: int) -> list[dict]:
+    """
+    Fallback for pages where spatial parser found 0 products.
+    Uses pymupdf4llm OCR to extract text, then parses BGN prices
+    and pairs them with nearby Cyrillic product names.
+    """
+    try:
+        import pymupdf4llm
+
+        md = pymupdf4llm.to_markdown(pdf_path, pages=[page_idx])
+
+        # Extract OCR picture-text block if present; otherwise use full text
+        m = re.search(r'Start of picture text(.*?)End of picture text', md, re.DOTALL)
+        text = m.group(1) if m else md
+
+        # Split into lines
+        lines = [l.strip() for l in re.split(r'<br>|\n', text) if l.strip()]
+
+        # Match: optional EUR price then BGN price  e.g.  "1,53€ 2,99ЛВ." or "2,99 ЛВ."
+        bgn_pat = re.compile(r'(\d+)[,.](\d{2})\s*[ЛлLl]\s*[ВвBb]', re.IGNORECASE)
+
+        products = []
+        for i, line in enumerate(lines):
+            bgn_hits = bgn_pat.findall(line)
+            if not bgn_hits:
+                continue
+
+            # Collect Cyrillic context from a window of ±3 lines around the price line
+            window = lines[max(0, i - 3):i] + lines[i + 1:min(len(lines), i + 4)]
+            cyrillic_tokens = []
+            for ctx in window:
+                if bgn_pat.search(ctx):          # skip other price lines
+                    continue
+                if '%' in ctx:                   # skip discount badges
+                    continue
+                tokens = [t for t in ctx.split()
+                          if len(re.findall(r'[а-яА-ЯёЁ]', t)) >= 2]
+                cyrillic_tokens.extend(tokens)
+
+            if not cyrillic_tokens:
+                continue
+
+            name = ' '.join(cyrillic_tokens[:3])  # first 3 Cyrillic words as name
+
+            # Filter promo/navigation noise
+            name_lower = name.lower()
+            _promo_noise = ('хипермаркет', 'промоци', 'етикет', 'офер',
+                            'брошур', 'покупка', 'страниц', 'информац')
+            if any(kw in name_lower for kw in _promo_noise):
+                continue
+            _prepositions = ('от', 'до', 'в', 'на', 'към', 'за', 'при', 'с',
+                             'по', 'под', 'над', 'без', 'пред', 'след')
+            if name_lower.split()[0] in _prepositions:
+                continue
+
+            for hit in bgn_hits:
+                price = float(f'{hit[0]}.{hit[1]}')
+                if 0.01 < price < 500:
+                    products.append({
+                        'name': name,
+                        'price': price,
+                        'original_price': None,
+                        'page_number': page_num,
+                    })
+
+        return products
+    except Exception as e:
+        print(f'OCR fallback page {page_num} failed: {e}', flush=True)
+        return []
 
 
 def parse_pdf(pdf_path: str, store_name: str,
@@ -61,21 +133,20 @@ def parse_pdf(pdf_path: str, store_name: str,
     except Exception as e:
         print(f'Strategy 1 failed: {e}', flush=True)
 
-    # STRATEGY 2 — pymupdf spatial pairing (name blocks ↔ price blocks by proximity)
-    # Works well for visual product catalog PDFs where name and price are separate text layers.
+    # STRATEGY 2 — pymupdf spatial pairing + pymupdf4llm fallback for image-only pages
     if len(products) <= 5:
         try:
             import fitz
             _products = []
             doc = fitz.open(pdf_path)
+            empty_page_indices = []  # (page_num, page_idx) for pages with 0 spatial hits
 
             for page_num, page in enumerate(doc, 1):
+                page_start = len(_products)
                 blocks = page.get_text('blocks')
-                page_w = page.rect.width
-                page_h = page.rect.height
 
-                name_blocks = []   # list of dicts
-                raw_price_blocks = []  # all blocks with a ЛВ. price
+                name_blocks = []
+                raw_price_blocks = []
 
                 for block in blocks:
                     text = block[4].strip()
@@ -115,16 +186,22 @@ def parse_pdf(pdf_path: str, store_name: str,
                         continue
                     if len(first) > 60 and first.count(' ') > 8:
                         continue
+                    # Skip promo/navigation text
+                    first_lower = first.lower()
+                    _noise_kw = ('хипермаркет', 'промоци', 'етикет', 'брошур',
+                                 'покупка', 'страниц', 'информац', 'офер')
+                    if any(kw in first_lower for kw in _noise_kw):
+                        continue
+                    _preps = ('от', 'до', 'в', 'на', 'към', 'за', 'при',
+                              'по', 'под', 'над', 'без', 'пред', 'след',
+                              'допълнително', 'търси')
+                    if first_lower.split()[0] in _preps:
+                        continue
                     name_blocks.append({'x': x, 'y': y, 'name': first})
 
                 # --- Phase 1: pair raw price blocks into (current, original) pairs ---
-                # In Kaufland PDFs the original (struck-through) price block sits
-                # 7-10 px ABOVE (smaller y) and within 20 px horizontally of the
-                # current price block.  Group them tightly, then use:
-                #   lower y  = original price
-                #   higher y = current price (closer to the product name)
                 used_raw = set()
-                price_pairs = []  # {x, y, price, original_price}
+                price_pairs = []
                 for i, pb in enumerate(raw_price_blocks):
                     if i in used_raw:
                         continue
@@ -134,8 +211,7 @@ def parse_pdf(pdf_path: str, store_name: str,
                         if j == i or j in used_raw:
                             continue
                         dx = abs(ob['x'] - pb['x'])
-                        dy = ob['y'] - pb['y']   # negative = ob is above pb
-                        # Original is a few px above and almost same x
+                        dy = ob['y'] - pb['y']
                         if dx <= 20 and -15 <= dy <= -4:
                             if abs(dy) < best_dy:
                                 best_dy = abs(dy)
@@ -143,7 +219,6 @@ def parse_pdf(pdf_path: str, store_name: str,
                     if best_j is not None:
                         ob = raw_price_blocks[best_j]
                         used_raw.update([i, best_j])
-                        # pb is below ob → pb = current, ob = original
                         price_pairs.append({
                             'x': pb['x'], 'y': pb['y'],
                             'price': pb['price'],
@@ -184,7 +259,20 @@ def parse_pdf(pdf_path: str, store_name: str,
                         'page_number': page_num,
                     })
 
-            print(f'Strategy 2 (spatial): {len(_products)} products', flush=True)
+                if len(_products) == page_start:
+                    empty_page_indices.append((page_num, page_num - 1))
+
+            # --- Fallback: pymupdf4llm OCR for image-only pages ---
+            if empty_page_indices:
+                print(
+                    f'Strategy 2: {len(empty_page_indices)} image-only pages, '
+                    f'running OCR fallback...', flush=True
+                )
+                for page_num, page_idx in empty_page_indices:
+                    ocr_hits = _ocr_page_fallback(pdf_path, page_idx, page_num)
+                    _products.extend(ocr_hits)
+
+            print(f'Strategy 2 (spatial+OCR): {len(_products)} products', flush=True)
             products = _products
         except Exception as e:
             print(f'Strategy 2 failed: {e}', flush=True)

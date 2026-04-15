@@ -151,7 +151,7 @@ def search_products(query: str, limit: int = 50) -> list[dict]:
         for product, catalog, store in results:
             score = fuzz.WRatio(query.lower(), product.name.lower())
             if score >= threshold:
-                scored.append((score, product, store))
+                scored.append((score, product, catalog, store))
 
         # Sort by score descending, take top N
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -168,9 +168,11 @@ def search_products(query: str, limit: int = 50) -> list[dict]:
                 "image_url": product.image_url,
                 "store_name": store.name,
                 "store_slug": store.slug,
+                "valid_from": catalog.start_date.strftime("%d.%m"),
+                "valid_to": catalog.end_date.strftime("%d.%m"),
                 "score": score,
             }
-            for score, product, store in scored
+            for score, product, catalog, store in scored
         ]
 
 

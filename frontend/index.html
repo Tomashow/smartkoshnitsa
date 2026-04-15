@@ -156,6 +156,16 @@
       font-weight: 600;
     }
 
+    .card-validity {
+      font-size: 0.75rem;
+      color: #bbb;
+      margin-top: 2px;
+    }
+
+    .card-store[data-slug="billa"]    { background: #e53935; }
+    .card-store[data-slug="kaufland"] { background: #e65100; }
+    .card-store[data-slug="lidl"]     { background: #1565c0; }
+
     .empty {
       grid-column: 1/-1;
       text-align: center;
@@ -217,15 +227,17 @@
           ? `<span class="card-original">${toEur(p.original_price)} €</span>`
           : '';
         const badge = disc ? `<span class="card-discount">${disc}</span>` : '';
+        const validity = p.valid_to ? `<div class="card-validity">до ${p.valid_to}</div>` : '';
         return `
         <div class="card">
-          <span class="card-store">${p.store_name}</span>
+          <span class="card-store" data-slug="${p.store_slug}">${p.store_name}</span>
           <div class="card-name">${p.name}</div>
           <div class="card-price-row">
             <span class="card-price">${toEur(p.price)} €</span>
             ${unit}${orig}${badge}
           </div>
           <div class="card-price-eur">${fmt(p.price)} лв.</div>
+          ${validity}
         </div>`;
       }).join('');
     }
