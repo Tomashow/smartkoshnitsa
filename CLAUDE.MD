@@ -37,7 +37,7 @@ Kaufland, Lidl, Billa Bulgaria. FastAPI backend + vanilla JS frontend. SQLite.
 
 <!-- UPDATE THIS EVERY SESSION — one line only -->
 
-Build Lidl scraper (100+ products). Kaufland + Billa + PDF parser + UI all done.
+GitHub Actions weekly cron next. All 3 scrapers done + UI with sort/filter complete.
 
 ## Project state
 
@@ -50,10 +50,18 @@ Build Lidl scraper (100+ products). Kaufland + Billa + PDF parser + UI all done.
   - Full product names (up to 3 lines joined)
   - Current vs original price pairing (spatial dy proximity)
   - Image extraction: crop from full-page JPEG at 2× scale → 78/192 with images
+- [x] scrapers/lidl.py — local PDF parser, 28 products, 26 with images
+- [x] parser/lidl_pdf.py — Lidl-specific parser (EUR-primary, embedded JPEGs)
+  - Anchors on compact sale-EUR tokens ("X.XX€") per price row
+  - Per-page footer detection avoids disclaimer text leaking into names
+  - Extracts embedded JPEG images via PyMuPDF, matched by spatial proximity
+  - Pre-normalizes Latin units (g/опаковка → г) before extract_unit
 - [x] api/main.py — FastAPI + /api/search + /images/ static + frontend static
-- [x] frontend/index.html — search UI, EUR primary / BGN secondary, per-store badge colors, product images, validity dates
-- [ ] scrapers/lidl.py ← NEXT
-- [ ] GitHub Actions weekly cron
+- [x] frontend/index.html — search UI with sort + store visibility filters
+  - Sort: by relevance / price ↑ / price ↓ (client-side, no extra API call)
+  - Store toggles: Кауфланд (orange) / Билла (red) / Лидл (blue), pill-style
+  - EUR primary / BGN secondary, per-store badge colors, product images, validity dates
+- [ ] GitHub Actions weekly cron ← NEXT
 - [ ] Basket comparison UI (/api/basket)
 
 ## PDF parser notes
@@ -160,8 +168,20 @@ asyncio.run(inspect())
 - /scraper <url> → inspect page, find selectors
 - /test <file> → run tests, fix failures
 
+## Lidl parser notes (parser/lidl_pdf.py)
+
+- Anchors on compact sale-EUR tokens `X.XX€` (combined, no space) → sale price
+- Original (crossed-out) price: separate `X.XX` + `€` tokens ~15pt above anchor
+- Two-column layout (pages 2–5); page 1 has 2-row with 2+3 product layout
+- Per-page footer detection: `_footer_y()` finds first footer marker (Брошурата / Виж)
+  to avoid disclaimer text leaking into product names on page 1
+- Images: embedded DCT JPEGs (6–9 per page), matched by spatial proximity to product zone
+  Large background images filtered: width > 75% page_width OR height > 45% page_height
+- Latin units normalized before extract_unit: `500 g/опаковка` → `500 г`
+- PDF: data/pdfs/lidl_test.pdf (local, 5 pages, 28 products, 26 images)
+
 ## Next 3 milestones in order
 
-1. Lidl scraper → 100+ products
-2. GitHub Actions weekly cron (scrape on schedule, push to Render/Railway)
-3. Basket comparison UI — /api/basket endpoint + frontend
+1. GitHub Actions weekly cron (scrape on schedule, push to Render/Railway)
+2. Basket comparison UI — /api/basket endpoint + frontend
+3. Expand Lidl: download live PDF from lidl.bg (currently uses local test PDF)

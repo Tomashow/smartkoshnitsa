@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3 -c ':*)"
+      "Bash(python3 -c ':*)",
+      "Bash(python3:*)",
+      "Bash(curl -s -H \"User-Agent: Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36\" \"https://kaufland.leaflets.schwarz/assets/index-afda8633.js\")",
+      "Bash(grep -oE 'endpoints\\\\.leaflets\\\\.schwarz[^\"'\\\\''` ]*|/v4/[a-zA-Z_]+\\(\\\\?[^\"'\\\\''` ]*\\)?|`\\\\$\\\\{[^}]*\\\\}/v4/[^`]*`')",
+      "Bash(curl -s -H \"User-Agent: Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36\" -H \"Accept: application/json\" -H \"Origin: https://leaflets.kaufland.com\" -H \"Referer: https://leaflets.kaufland.com/\" \"https://endpoints.leaflets.schwarz/v4/content?flyer_id=019d3f12-d0e8-77bc-93a9-f603667b1e31\" -w \"\\\\nStatus: %{http_code}\\\\n\")",
+      "Bash(curl -s -H \"User-Agent: Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36\" -H \"Accept: application/json\" \"https://endpoints.leaflets.schwarz/v4/flyer/019d3f12-d0e8-77bc-93a9-f603667b1e31/hotspots\" -w \"\\\\nStatus: %{http_code}\\\\n\")"
     ]
   }
 }

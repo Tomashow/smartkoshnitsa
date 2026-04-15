@@ -25,8 +25,9 @@ def cmd_scrape():
     """Run all scrapers and insert products into the database."""
     from scrapers.billa import BillaScraper
     from scrapers.kaufland import KauflandScraper
+    from scrapers.lidl import LidlScraper
 
-    for name, scraper in [("Billa", BillaScraper()), ("Kaufland", KauflandScraper())]:
+    for name, scraper in [("Billa", BillaScraper()), ("Kaufland", KauflandScraper()), ("Lidl", LidlScraper())]:
         try:
             products = scraper.scrape()
             if products:

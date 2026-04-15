@@ -181,6 +181,56 @@
       padding: 48px 0;
       font-size: 1rem;
     }
+
+    #filter-bar {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    #sort-select {
+      padding: 6px 10px;
+      font-size: 0.88rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+      cursor: pointer;
+      background: #fafafa;
+      color: #333;
+    }
+
+    #sort-select:focus {
+      border-color: #d32f2f;
+    }
+
+    .store-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      user-select: none;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid #ddd;
+      transition: opacity 0.15s;
+    }
+
+    .store-toggle input[type="checkbox"] {
+      display: none;
+    }
+
+    .store-toggle[data-slug="kaufland"] { border-color: #e65100; color: #e65100; }
+    .store-toggle[data-slug="billa"]    { border-color: #e53935; color: #e53935; }
+    .store-toggle[data-slug="lidl"]     { border-color: #1565c0; color: #1565c0; }
+
+    .store-toggle.inactive {
+      opacity: 0.4;
+    }
   </style>
 </head>
 
@@ -196,6 +246,23 @@
     <button id="btn">Търси</button>
   </div>
 
+  <div id="filter-bar">
+    <select id="sort-select">
+      <option value="score">По релевантност</option>
+      <option value="price-asc">Цена ↑</option>
+      <option value="price-desc">Цена ↓</option>
+    </select>
+    <label class="store-toggle" data-slug="kaufland" id="toggle-kaufland">
+      <input type="checkbox" id="show-kaufland" checked> Кауфланд
+    </label>
+    <label class="store-toggle" data-slug="billa" id="toggle-billa">
+      <input type="checkbox" id="show-billa" checked> Билла
+    </label>
+    <label class="store-toggle" data-slug="lidl" id="toggle-lidl">
+      <input type="checkbox" id="show-lidl" checked> Лидл
+    </label>
+  </div>
+
   <div id="status"></div>
   <div id="results"></div>
 
@@ -204,8 +271,13 @@
     const btn = document.getElementById('btn');
     const status = document.getElementById('status');
     const results = document.getElementById('results');
+    const sortSelect = document.getElementById('sort-select');
+    const showKaufland = document.getElementById('show-kaufland');
+    const showBilla = document.getElementById('show-billa');
+    const showLidl = document.getElementById('show-lidl');
 
     let debounceTimer;
+    let lastResults = [];
 
     const BGN_EUR = 1.95583;
 
@@ -254,26 +326,60 @@
       }).join('');
     }
 
+    function applyFilters() {
+      let items = lastResults.slice();
+
+      if (!showKaufland.checked) items = items.filter(p => p.store_slug !== 'kaufland');
+      if (!showBilla.checked)    items = items.filter(p => p.store_slug !== 'billa');
+      if (!showLidl.checked)     items = items.filter(p => p.store_slug !== 'lidl');
+
+      const sort = sortSelect.value;
+      if (sort === 'price-asc')  items.sort((a, b) => a.price - b.price);
+      if (sort === 'price-desc') items.sort((a, b) => b.price - a.price);
+
+      render(items);
+    }
+
     async function doSearch() {
       const q = input.value.trim();
       if (!q) {
         status.textContent = '';
         results.innerHTML = '';
+        lastResults = [];
         return;
       }
       status.textContent = 'Търсене...';
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
         const data = await res.json();
+        lastResults = data;
         status.textContent = data.length
           ? `${data.length} резултата за „${q}"`
           : `Няма резултати за „${q}"`;
-        render(data);
+        applyFilters();
       } catch (e) {
         status.textContent = 'Грешка при търсенето';
         results.innerHTML = '';
       }
     }
+
+    function syncToggleStyle(checkbox, labelId) {
+      document.getElementById(labelId).classList.toggle('inactive', !checkbox.checked);
+    }
+
+    showKaufland.addEventListener('change', () => {
+      syncToggleStyle(showKaufland, 'toggle-kaufland');
+      applyFilters();
+    });
+    showBilla.addEventListener('change', () => {
+      syncToggleStyle(showBilla, 'toggle-billa');
+      applyFilters();
+    });
+    showLidl.addEventListener('change', () => {
+      syncToggleStyle(showLidl, 'toggle-lidl');
+      applyFilters();
+    });
+    sortSelect.addEventListener('change', applyFilters);
 
     btn.addEventListener('click', doSearch);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
