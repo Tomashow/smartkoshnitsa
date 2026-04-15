@@ -4,8 +4,10 @@ Tries three strategies in order, uses first that returns > 5 products.
 Strategy 2 (spatial) adds a pymupdf4llm fallback for image-only pages.
 """
 
+import io
 import re
 from datetime import date
+from pathlib import Path
 
 # Quality check: reject a strategy if >40% of names start with digits
 def _quality_ok(products: list) -> bool:
@@ -141,9 +143,48 @@ def parse_pdf(pdf_path: str, store_name: str,
             doc = fitz.open(pdf_path)
             empty_page_indices = []  # (page_num, page_idx) for pages with 0 spatial hits
 
+            img_dir = Path(pdf_path).parent / 'images'
+            img_dir.mkdir(exist_ok=True)
+            pdf_stem = Path(pdf_path).stem
+
             for page_num, page in enumerate(doc, 1):
                 page_start = len(_products)
                 blocks = page.get_text('blocks')
+
+                # Find the full-page background JPEG (Kaufland embeds all product
+                # photos in ONE large image per page at ~2× PDF-point scale).
+                # We'll crop product regions from it instead of separate objects.
+                fullpage_img = None  # {'pil', 'bbox', 'scale_x', 'scale_y'} or None
+                page_rect = page.rect
+                page_area = page_rect.width * page_rect.height
+                best_coverage = 0.0
+                for img_info in page.get_images(full=True):
+                    xref = img_info[0]
+                    src_w, src_h = img_info[2], img_info[3]
+                    if src_w < 200 or src_h < 400:
+                        continue
+                    try:
+                        # Must pass full tuple to get_image_bbox, NOT just xref
+                        bbox = page.get_image_bbox(img_info)
+                        coverage = (bbox.width * bbox.height) / page_area
+                        if coverage > best_coverage:
+                            best_coverage = coverage
+                            try:
+                                from PIL import Image as PILImage
+                                raw = doc.extract_image(xref)
+                                pil_img = PILImage.open(
+                                    io.BytesIO(raw['image'])
+                                ).convert('RGB')
+                                fullpage_img = {
+                                    'pil': pil_img,
+                                    'bbox': bbox,
+                                    'scale_x': pil_img.width / bbox.width,
+                                    'scale_y': pil_img.height / bbox.height,
+                                }
+                            except Exception:
+                                pass
+                    except Exception:
+                        continue
 
                 name_blocks = []
                 raw_price_blocks = []
@@ -197,7 +238,9 @@ def parse_pdf(pdf_path: str, store_name: str,
                               'допълнително', 'търси')
                     if first_lower.split()[0] in _preps:
                         continue
-                    name_blocks.append({'x': x, 'y': y, 'name': first})
+                    # Use up to 3 lines joined — gives "млечен чесън" not just "млечен"
+                    full_name = ' '.join(lines[:3])
+                    name_blocks.append({'x': x, 'y': y, 'name': full_name})
 
                 # --- Phase 1: pair raw price blocks into (current, original) pairs ---
                 used_raw = set()
@@ -252,10 +295,44 @@ def parse_pdf(pdf_path: str, store_name: str,
                         continue
                     pp = price_pairs[best_idx]
                     used_pair_indices.add(best_idx)
+
+                    # Crop product photo from full-page background JPEG.
+                    # Kaufland layout: product image sits ABOVE the name block.
+                    # Name at nb['y'] PDF pts → photo roughly (name_y-220)..(name_y-10).
+                    image_url = None
+                    if fullpage_img and best_coverage > 0.5:
+                        try:
+                            from PIL import Image as PILImage
+                            pil = fullpage_img['pil']
+                            fb = fullpage_img['bbox']
+                            sx = fullpage_img['scale_x']
+                            sy = fullpage_img['scale_y']
+                            # Convert PDF points to pixel coords inside the JPEG
+                            cx = int((nb['x'] - fb.x0) * sx)
+                            cy = int((nb['y'] - fb.y0) * sy)
+                            half_w = int(90 * sx)
+                            crop_x0 = max(0, cx - half_w)
+                            crop_x1 = min(pil.width, cx + half_w)
+                            crop_y0 = max(0, cy - int(220 * sy))
+                            crop_y1 = max(0, cy - int(10 * sy))
+                            if crop_x1 > crop_x0 and crop_y1 > crop_y0:
+                                crop = pil.crop((crop_x0, crop_y0, crop_x1, crop_y1))
+                                if crop.width > 20 and crop.height > 20:
+                                    crop.thumbnail((300, 300))
+                                    slug = f'{int(nb["x"])}_{int(nb["y"])}'
+                                    img_path = img_dir / f'{pdf_stem}_p{page_num}_{slug}.jpg'
+                                    if not img_path.exists():
+                                        crop.save(img_path, 'JPEG', quality=80)
+                                    if img_path.exists():
+                                        image_url = f'/images/{img_path.name}'
+                        except Exception:
+                            pass
+
                     _products.append({
                         'name': nb['name'],
                         'price': pp['price'],
                         'original_price': pp['original_price'],
+                        'image_url': image_url,
                         'page_number': page_num,
                     })
 
@@ -327,6 +404,7 @@ def parse_pdf(pdf_path: str, store_name: str,
             'price': p['price'],
             'original_price': p.get('original_price'),
             'unit': unit,
+            'image_url': p.get('image_url'),
             'page_number': p.get('page_number'),
             'store_name': store_name,
             'valid_from': valid_from,

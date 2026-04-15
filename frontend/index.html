@@ -162,6 +162,14 @@
       margin-top: 2px;
     }
 
+    .card-img {
+      width: 100%;
+      max-height: 140px;
+      object-fit: contain;
+      border-radius: 4px;
+      background: #f9f9f9;
+    }
+
     .card-store[data-slug="billa"]    { background: #e53935; }
     .card-store[data-slug="kaufland"] { background: #e65100; }
     .card-store[data-slug="lidl"]     { background: #1565c0; }
@@ -228,9 +236,13 @@
           : '';
         const badge = disc ? `<span class="card-discount">${disc}</span>` : '';
         const validity = p.valid_to ? `<div class="card-validity">до ${p.valid_to}</div>` : '';
+        const img = p.image_url
+          ? `<img src="${p.image_url}" alt="${p.name}" class="card-img" loading="lazy">`
+          : '';
         return `
         <div class="card">
           <span class="card-store" data-slug="${p.store_slug}">${p.store_name}</span>
+          ${img}
           <div class="card-name">${p.name}</div>
           <div class="card-price-row">
             <span class="card-price">${toEur(p.price)} €</span>

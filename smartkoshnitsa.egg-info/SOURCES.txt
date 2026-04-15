@@ -1,11 +1,17 @@
 pyproject.toml
 api/__init__.py
+api/main.py
 db/__init__.py
 db/models.py
 parser/__init__.py
+parser/normalizer.py
+parser/pdf_parser.py
 scrapers/__init__.py
+scrapers/billa.py
+scrapers/kaufland.py
 smartkoshnitsa.egg-info/PKG-INFO
 smartkoshnitsa.egg-info/SOURCES.txt
 smartkoshnitsa.egg-info/dependency_links.txt
 smartkoshnitsa.egg-info/requires.txt
 smartkoshnitsa.egg-info/top_level.txt
+tests/test_normalizer.py

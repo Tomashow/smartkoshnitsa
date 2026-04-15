@@ -5,11 +5,15 @@ Requires-Python: >=3.11
 Requires-Dist: fastapi>=0.110.0
 Requires-Dist: uvicorn[standard]>=0.29.0
 Requires-Dist: sqlmodel>=0.0.16
-Requires-Dist: playwright>=1.43.0
-Requires-Dist: pdfplumber>=0.10.0
-Requires-Dist: pymupdf>=1.24.0
 Requires-Dist: rapidfuzz>=3.8.0
 Requires-Dist: httpx>=0.27.0
 Requires-Dist: apscheduler>=3.10.0
 Requires-Dist: python-dotenv>=1.0.0
-Requires-Dist: pillow>=10.0.0
+Provides-Extra: scrape
+Requires-Dist: playwright>=1.43.0; extra == "scrape"
+Requires-Dist: pdfplumber>=0.10.0; extra == "scrape"
+Requires-Dist: pymupdf>=1.24.0; extra == "scrape"
+Requires-Dist: pymupdf4llm; extra == "scrape"
+Requires-Dist: pillow>=10.0.0; extra == "scrape"
+Requires-Dist: paddlepaddle; extra == "scrape"
+Requires-Dist: paddleocr; extra == "scrape"

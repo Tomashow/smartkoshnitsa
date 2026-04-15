@@ -1,5 +1,7 @@
 """FastAPI application for SmartKoshnitsa."""
 
+import os
+
 from fastapi import FastAPI, Query
 from fastapi.staticfiles import StaticFiles
 
@@ -14,5 +16,10 @@ def search(q: str = Query(default="")):
         return []
     return search_products(q)
 
+
+# Serve extracted product images
+_img_dir = "data/pdfs/images"
+os.makedirs(_img_dir, exist_ok=True)
+app.mount("/images", StaticFiles(directory=_img_dir), name="images")
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
